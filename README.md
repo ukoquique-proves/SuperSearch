@@ -129,13 +129,14 @@ BRAVE_API_KEY=your_brave_api_key
 GOOGLE_CSE_API_KEY=your_google_api_key
 GOOGLE_CSE_CX=your_custom_search_engine_id
 BING_API_KEY=your_bing_api_key
+MOJEEK_API_KEY=your_mojeek_api_key
 
 # Free API key — reduces rate limiting on Semantic Scholar (no credit card needed)
 # Register at: https://www.semanticscholar.org/product/api
 SEMANTIC_SCHOLAR_API_KEY=your_semantic_scholar_api_key
 
-# Comma-separated SearX instances (all queried in parallel)
-SEARX_INSTANCES=https://searx.tiekoetter.com,https://search.mdosch.de,https://opnxng.com
+# Comma-separated SearX instances (all queried in parallel, dynamic fallback to searx.space)
+SEARX_INSTANCES=https://searx.tiekoetter.com,https://search.mdosch.de,https://opnxng.com,...
 
 # Request timeout in seconds
 SEARCH_TIMEOUT=15
@@ -164,7 +165,7 @@ SuperSearch/
 ├── requirements.txt         # Python dependencies
 ├── .env.example            # Configuration template
 ├── .env                    # Local configuration (not committed)
-├── .gitignore              # Excludes .env, __pycache__, .venv, .pytest_cache
+├── .gitignore              # Excludes .env, __pycache__, .venv, .pytest_cache, .search_cache
 ├── CHANGELOG.md            # Version history
 ├── NEXT_TO_DO.md           # Pending improvements tracker
 ├── tests/
@@ -211,7 +212,7 @@ SuperSearch/
 
 ```
 Query: python async programming
-Providers: duckduckgo, duckduckgo_news, searx, wikipedia
+Providers: duckduckgo, duckduckgo_news, hacker_news, reddit, semantic_scholar, internet_archive, wikipedia, searx
 Unique URLs: 25
 
 ┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
