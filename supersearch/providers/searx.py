@@ -46,56 +46,60 @@ class SearXProvider(SearchProvider):
         async with httpx.AsyncClient(
             timeout=self._timeout,
             follow_redirects=True,
-            headers={"User-Agent": "SuperSearch/1.0 (research tool; contact@supersearch.org)"},
+            headers={
+                "User-Agent": "SuperSearch/1.0 (research tool; contact@supersearch.org)"
+            },
         ) as client:
-            results_dict = {}
-            statuses = {}
 
-            async def run_instance(base: str):
-                try:
-                    res = await self._query_instance(client, base, query, max_results)
-                    results_dict[base] = res
-                    statuses[base] = 200
-                except httpx.HTTPStatusError as exc:
-                    statuses[base] = exc.response.status_code
-                    results_dict[base] = []
-                except Exception:
-                    statuses[base] = 500
-                    results_dict[base] = []
+            async def probe_instances(
+                instances: list[str],
+            ) -> tuple[list[list[SearchResult]], bool]:
+                """Query *instances* concurrently. Returns (non-empty batches, had_429)."""
+                res_map: dict[str, list[SearchResult]] = {}
+                status_map: dict[str, int] = {}
+
+                async def run_one(base: str) -> None:
+                    try:
+                        res_map[base] = await self._query_instance(
+                            client, base, query, max_results
+                        )
+                        status_map[base] = 200
+                    except httpx.HTTPStatusError as exc:
+                        status_map[base] = exc.response.status_code
+                        res_map[base] = []
+                    except Exception:
+                        status_map[base] = 500
+                        res_map[base] = []
+
+                await asyncio.gather(*[run_one(base) for base in instances])
+                batches = [res_map[b] for b in instances if res_map[b]]
+                any_429 = any(code == 429 for code in status_map.values())
+                return batches, any_429
+
+            merged_batches: list[list[SearchResult]] = []
+            had_429 = False
 
             if self._instances:
-                await asyncio.gather(*[run_instance(base) for base in self._instances])
-
-            merged_batches = [res for base, res in results_dict.items() if res]
-            had_429 = any(code == 429 for code in statuses.values())
+                merged_batches, had_429 = await probe_instances(self._instances)
 
             # Fallback if no instances returned results
             if not merged_batches:
                 dynamic_instances = await self._fetch_dynamic_instances()
                 if dynamic_instances:
-                    results_dict_fallback = {}
-                    statuses_fallback = {}
-
-                    async def run_fallback_instance(base: str):
-                        try:
-                            res = await self._query_instance(client, base, query, max_results)
-                            results_dict_fallback[base] = res
-                            statuses_fallback[base] = 200
-                        except httpx.HTTPStatusError as exc:
-                            statuses_fallback[base] = exc.response.status_code
-                            results_dict_fallback[base] = []
-                        except Exception:
-                            statuses_fallback[base] = 500
-                            results_dict_fallback[base] = []
-
-                    await asyncio.gather(*[run_fallback_instance(base) for base in dynamic_instances])
-                    merged_batches = [res for base, res in results_dict_fallback.items() if res]
-                    had_429 = had_429 or any(code == 429 for code in statuses_fallback.values())
+                    fallback_batches, fallback_429 = await probe_instances(
+                        dynamic_instances
+                    )
+                    merged_batches = fallback_batches
+                    had_429 = had_429 or fallback_429
 
             if not merged_batches and had_429:
                 request = httpx.Request("GET", "https://searx.space")
                 response = httpx.Response(429, request=request)
-                raise httpx.HTTPStatusError("SearX all instances rate limited (429)", request=request, response=response)
+                raise httpx.HTTPStatusError(
+                    "SearX all instances rate limited (429)",
+                    request=request,
+                    response=response,
+                )
 
         seen: set[str] = set()
         merged: list[SearchResult] = []

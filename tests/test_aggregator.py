@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 import asyncio
-import pytest
+import pathlib
+
 import httpx
-from supersearch.models import SearchResult, normalize_url
+import pytest
+
 from supersearch.aggregator import SuperSearchAggregator
+from supersearch.cache import SearchCache
 from supersearch.config import Config
+from supersearch.models import SearchResult, normalize_url
 from supersearch.providers.base import SearchProvider
+
+
+def _tmp_cache(tmp_path: pathlib.Path) -> SearchCache:
+    """Return a fresh SearchCache backed by a pytest tmp_path — never hits disk state."""
+    return SearchCache(cache_dir=str(tmp_path))
 
 
 def test_normalize_url() -> None:
@@ -26,7 +35,7 @@ def test_score_calculation() -> None:
         rank=0,
     )
     score1 = SuperSearchAggregator._score(res1, provider_count=1)
-    
+
     # provider_count=1 -> ln(2) ~= 0.693147
     # rank=0 -> 1/(1+0) = 1.0
     # snippet="Short snippet" -> len=13 -> 13/300 ~= 0.043333
@@ -48,16 +57,19 @@ def test_score_calculation() -> None:
     assert abs(score2 - 2.48629) < 1e-4
 
 
-def test_merge_logic() -> None:
-    agg = SuperSearchAggregator(Config(
-        brave_api_key=None,
-        google_api_key=None,
-        google_cx=None,
-        bing_api_key=None,
-        searx_instances=[],
-        semantic_scholar_api_key=None,
-        timeout=5.0,
-    ))
+def test_merge_logic(tmp_path: pathlib.Path) -> None:
+    agg = SuperSearchAggregator(
+        Config(
+            brave_api_key=None,
+            google_api_key=None,
+            google_cx=None,
+            bing_api_key=None,
+            searx_instances=[],
+            semantic_scholar_api_key=None,
+            timeout=5.0,
+        ),
+        cache=_tmp_cache(tmp_path),
+    )
 
     batch1 = [
         SearchResult(
@@ -83,25 +95,30 @@ def test_merge_logic() -> None:
     merged = agg._merge([batch1, batch2])
     assert len(merged) == 1
     res = merged[0]
-    
+
     # Check that duplicates are merged under the normalized URL
     assert normalize_url(res.url) == "https://example.com/path"
-    
+
     # Check metadata enrichment: longest title & longest snippet are preferred
     assert res.title == "Much Longer Title of Example Page"
-    assert res.snippet == "A significantly longer and more detailed description of the page"
-    
+    assert (
+        res.snippet
+        == "A significantly longer and more detailed description of the page"
+    )
+
     # Check combined provider set
     assert res.providers == frozenset({"provider1", "provider2"})
-    
+
     # Check minimum rank position (best position)
     assert res.rank == 0
 
 
 class MockProvider(SearchProvider):
     name = "mock_provider"
-    
-    def __init__(self, delay: float = 0.0, raise_error: bool = False, rate_limit: int = 0) -> None:
+
+    def __init__(
+        self, delay: float = 0.0, raise_error: bool = False, rate_limit: int = 0
+    ) -> None:
         self.delay = delay
         self.raise_error = raise_error
         self.rate_limit_attempts = rate_limit
@@ -117,8 +134,10 @@ class MockProvider(SearchProvider):
             # Raise HTTP 429
             req = httpx.Request("GET", "https://mock")
             resp = httpx.Response(429, request=req)
-            raise httpx.HTTPStatusError("429 Too Many Requests", request=req, response=resp)
-        
+            raise httpx.HTTPStatusError(
+                "429 Too Many Requests", request=req, response=resp
+            )
+
         return [
             SearchResult(
                 title=f"Mock Result {i}",
@@ -133,24 +152,27 @@ class MockProvider(SearchProvider):
 
 
 @pytest.mark.asyncio
-async def test_aggregator_timeout_guard() -> None:
+async def test_aggregator_timeout_guard(tmp_path: pathlib.Path) -> None:
     # Test that a slow provider is aborted, but others complete
     slow_provider = MockProvider(delay=1.0)
     fast_provider = MockProvider(delay=0.01)
 
-    agg = SuperSearchAggregator(Config(
-        brave_api_key=None,
-        google_api_key=None,
-        google_cx=None,
-        bing_api_key=None,
-        searx_instances=[],
-        semantic_scholar_api_key=None,
-        timeout=0.2, # short timeout
-    ))
+    agg = SuperSearchAggregator(
+        Config(
+            brave_api_key=None,
+            google_api_key=None,
+            google_cx=None,
+            bing_api_key=None,
+            searx_instances=[],
+            semantic_scholar_api_key=None,
+            timeout=0.2,  # short timeout
+        ),
+        cache=_tmp_cache(tmp_path),
+    )
     agg._providers = [slow_provider, fast_provider]
 
     results = await agg.search("test query", max_results=10, per_provider=3)
-    
+
     # Fast provider should have completed successfully
     # Slow provider should have timed out and contributed 0 results
     assert len(results) == 3

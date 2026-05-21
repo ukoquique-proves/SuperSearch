@@ -15,12 +15,11 @@ class SearchCache:
     def __init__(self, cache_dir: str = ".search_cache", ttl: int = 3600) -> None:
         self.cache_dir = cache_dir
         self.ttl = ttl
-        if not os.path.exists(self.cache_dir):
-            os.makedirs(self.cache_dir)
+        os.makedirs(self.cache_dir, exist_ok=True)
 
     def _get_cache_path(self, query: str, per_provider: int) -> str:
         key = f"{query}:{per_provider}"
-        hash_key = hashlib.md5(key.encode()).hexdigest()
+        hash_key = hashlib.md5(key.encode(), usedforsecurity=False).hexdigest()
         return os.path.join(self.cache_dir, f"{hash_key}.json")
 
     def get(self, query: str, per_provider: int) -> list[SearchResult] | None:

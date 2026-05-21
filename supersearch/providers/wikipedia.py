@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import re
+
 import httpx
 
 from supersearch.config import Config
@@ -26,7 +29,9 @@ class WikipediaProvider(SearchProvider):
                     "q": query,
                     "limit": max_results,
                 },
-                headers={"User-Agent": "SuperSearch/1.0 (research tool; contact@supersearch.org)"},
+                headers={
+                    "User-Agent": "SuperSearch/1.0 (research tool; contact@supersearch.org)"
+                },
             )
             resp.raise_for_status()
             data = resp.json()

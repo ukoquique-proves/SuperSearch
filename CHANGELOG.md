@@ -2,7 +2,7 @@
 
 All notable changes to SuperSearch are documented here.
 
-## [Unreleased] — 2026-05-20
+## [Unreleased] — 2026-05-21
 
 ### Added
 

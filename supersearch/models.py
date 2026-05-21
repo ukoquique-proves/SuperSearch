@@ -13,17 +13,6 @@ class SearchResult:
     rank: int = 0
     providers: frozenset[str] = field(default_factory=frozenset)
 
-    def with_provider(self, provider: str) -> SearchResult:
-        merged = frozenset(self.providers) | {provider}
-        return SearchResult(
-            title=self.title,
-            url=self.url,
-            snippet=self.snippet,
-            source=self.source,
-            rank=self.rank,
-            providers=merged,
-        )
-
 
 def normalize_url(url: str) -> str:
     parsed = urlparse(url.strip())

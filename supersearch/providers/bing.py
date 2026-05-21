@@ -24,7 +24,7 @@ class BingProvider(SearchProvider):
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             resp = await client.get(
                 "https://api.bing.microsoft.com/v7.0/search",
-                params={"q": query, "count": max_results, "textDecorations": False},
+                params={"q": query, "count": max_results, "textDecorations": "false"},
                 headers={"Ocp-Apim-Subscription-Key": self._key},
             )
             resp.raise_for_status()

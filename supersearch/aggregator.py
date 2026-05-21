@@ -22,10 +22,14 @@ _RETRY_BASE_DELAY = 1.0  # seconds; doubles each attempt
 class SuperSearchAggregator:
     """Query many backends in parallel, merge by URL, boost cross-provider hits."""
 
-    def __init__(self, config: Config | None = None) -> None:
+    def __init__(
+        self,
+        config: Config | None = None,
+        cache: SearchCache | None = None,
+    ) -> None:
         self._config = config or Config.from_env()
         self._providers = [p for p in build_providers(self._config) if p.enabled]
-        self._cache = SearchCache()
+        self._cache = cache if cache is not None else SearchCache()
 
     @property
     def active_providers(self) -> list[str]:
@@ -46,14 +50,18 @@ class SuperSearchAggregator:
             logger.info("Cache hit for query: %s", query)
             return cached[:max_results]
 
-        async def _timed_safe_search(provider: SearchProvider, q: str, max_res: int) -> list[SearchResult]:
+        async def _timed_safe_search(
+            provider: SearchProvider, q: str, max_res: int
+        ) -> list[SearchResult]:
             try:
                 return await asyncio.wait_for(
                     self._safe_search(provider, q, max_res),
                     timeout=self._config.timeout,
                 )
             except asyncio.TimeoutError:
-                logger.warning("%s timed out after %.1fs", provider.name, self._config.timeout)
+                logger.warning(
+                    "%s timed out after %.1fs", provider.name, self._config.timeout
+                )
                 return []
 
         tasks = [
@@ -81,20 +89,30 @@ class SuperSearchAggregator:
                 return rows
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 429:
-                    delay = _RETRY_BASE_DELAY * (2 ** attempt)
+                    delay = _RETRY_BASE_DELAY * (2**attempt)
                     logger.warning(
                         "%s rate-limited (429), retrying in %.1fs (attempt %d/%d)",
-                        provider.name, delay, attempt + 1, _MAX_RETRIES,
+                        provider.name,
+                        delay,
+                        attempt + 1,
+                        _MAX_RETRIES,
                     )
                     await asyncio.sleep(delay)
                     last_exc = exc
                 else:
-                    logger.warning("%s failed with HTTP %d: %s", provider.name, exc.response.status_code, exc)
+                    logger.warning(
+                        "%s failed with HTTP %d: %s",
+                        provider.name,
+                        exc.response.status_code,
+                        exc,
+                    )
                     return []
             except Exception as exc:
                 logger.warning("%s failed: %s", provider.name, exc)
                 return []
-        logger.warning("%s gave up after %d retries: %s", provider.name, _MAX_RETRIES, last_exc)
+        logger.warning(
+            "%s gave up after %d retries: %s", provider.name, _MAX_RETRIES, last_exc
+        )
         return []
 
     def _merge(self, batches: list[list[SearchResult]]) -> list[SearchResult]:
@@ -112,8 +130,16 @@ class SuperSearchAggregator:
                     best_rank[key] = self._score(row, provider_count=1)
                 else:
                     combined_providers = existing.providers | row.providers
-                    snippet = existing.snippet if len(existing.snippet) >= len(row.snippet) else row.snippet
-                    title = existing.title if len(existing.title) >= len(row.title) else row.title
+                    snippet = (
+                        existing.snippet
+                        if len(existing.snippet) >= len(row.snippet)
+                        else row.snippet
+                    )
+                    title = (
+                        existing.title
+                        if len(existing.title) >= len(row.title)
+                        else row.title
+                    )
                     merged = replace(
                         existing,
                         title=title,
@@ -122,9 +148,14 @@ class SuperSearchAggregator:
                         providers=combined_providers,
                     )
                     by_url[key] = merged
-                    best_rank[key] = self._score(merged, provider_count=len(combined_providers))
+                    best_rank[key] = self._score(
+                        merged, provider_count=len(combined_providers)
+                    )
 
-        ordered = sorted(by_url.values(), key=lambda r: best_rank[normalize_url(r.url)], reverse=True)
+        ordered = [
+            by_url[k]
+            for k in sorted(by_url.keys(), key=lambda k: best_rank[k], reverse=True)
+        ]
         return ordered
 
     @staticmethod
