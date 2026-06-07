@@ -18,6 +18,10 @@ def strip_html_tags(text: str) -> str:
 class WikipediaProvider(SearchProvider):
     name = "wikipedia"
 
+    @property
+    def independent(self) -> bool:
+        return True
+
     def __init__(self, config: Config) -> None:
         self._timeout = config.timeout
 

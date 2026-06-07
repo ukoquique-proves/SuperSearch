@@ -12,6 +12,10 @@ class SemanticScholarProvider(SearchProvider):
 
     name = "semantic_scholar"
 
+    @property
+    def independent(self) -> bool:
+        return True
+
     def __init__(self, config: Config) -> None:
         self._timeout = config.timeout
         self._api_key = config.semantic_scholar_api_key

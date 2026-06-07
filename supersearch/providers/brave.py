@@ -10,6 +10,10 @@ from supersearch.providers.base import SearchProvider
 class BraveProvider(SearchProvider):
     name = "brave"
 
+    @property
+    def independent(self) -> bool:
+        return True
+
     def __init__(self, config: Config) -> None:
         self._key = config.brave_api_key
         self._timeout = config.timeout

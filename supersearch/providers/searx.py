@@ -14,6 +14,10 @@ class SearXProvider(SearchProvider):
 
     name = "searx"
 
+    @property
+    def independent(self) -> bool:
+        return True
+
     def __init__(self, config: Config) -> None:
         self._instances = config.searx_instances
         self._timeout = config.timeout

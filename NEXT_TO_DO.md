@@ -56,13 +56,14 @@ Pending improvements ordered by impact.
 
 ## Completed
 
+- [x] **Independence-aware scoring** — Providers classified as independent (Mojeek, Brave, SearXNG, Wikipedia, HN, Semantic Scholar, Internet Archive) receive a 0.3× scoring boost per independent source. Added `--independent-only` / `-i` CLI filter. Based on `RECOMMENDED_SEARCHERS.md`.
 - [x] **Mojeek 403 fix** — Gated `MojeekProvider` with `MOJEEK_API_KEY`; without a key the provider is now disabled cleanly instead of crashing with 403 Forbidden.
 - [x] **SearX 429 fix** — All-429 state now propagates up as a retryable error to the aggregator's backoff handler; added dynamic fallback to fetch fresh working instances from `searx.space/data/instances.json` at runtime.
 - [x] **Wikipedia 0 results fix** — Switched from the prefix-match `opensearch` API to the full-text REST Search API (`/w/rest.php/v1/search/page`); returns richer results even for specific technical queries.
 - [x] **Cache hit confirmed** — Second identical query returned in ~0.3 s with no network calls. Disk caching (`supersearch/cache.py`, TTL-based) is working correctly.
 - [x] **Disk caching system** — `supersearch/cache.py`, TTL-based on-disk JSON cache integrated into the aggregator. `.search_cache/` excluded from version control via `.gitignore`.
 - [x] **Mojeek provider** — `supersearch/providers/mojeek.py`, optional provider requiring `MOJEEK_API_KEY`.
-- [x] **Unit tests** — `tests/test_aggregator.py`, 4 tests covering `normalize_url`, `_score`, `_merge`, and the timeout guard. All passing.
+- [x] **Unit tests** — `tests/test_aggregator.py`, 6 tests covering `normalize_url`, `_score`, `_merge`, timeout guard, independence scoring, and independent-only filter. All passing.
 - [x] **`.gitignore`** — excludes `.env`, `__pycache__/`, `*.pyc`, `.venv/`, `.pytest_cache/`, `.search_cache/`.
 - [x] **Global provider timeout guard** — `asyncio.wait_for` in `aggregator.py` cancels stalled providers individually.
 - [x] **Expanded SearX instance pool** — from 3 to 13 public instances in `.env` and `.env.example`.

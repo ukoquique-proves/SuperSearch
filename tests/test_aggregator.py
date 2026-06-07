@@ -27,19 +27,22 @@ def test_normalize_url() -> None:
 
 def test_score_calculation() -> None:
     # Score(R) = ln(1 + provider_count) + 1/(1 + rank) + min(len(snippet), 300)/300
+    #          + 0.3 * independent_source_count
     res1 = SearchResult(
         title="Test Title",
         url="https://example.com",
         snippet="Short snippet",
         source="test",
         rank=0,
+        independent_source_count=0,
     )
     score1 = SuperSearchAggregator._score(res1, provider_count=1)
 
     # provider_count=1 -> ln(2) ~= 0.693147
     # rank=0 -> 1/(1+0) = 1.0
     # snippet="Short snippet" -> len=13 -> 13/300 ~= 0.043333
-    # Total ~= 0.693147 + 1.0 + 0.043333 = 1.73648
+    # independence = 0.3 * 0 = 0.0
+    # Total ~= 0.693147 + 1.0 + 0.043333 + 0.0 = 1.73648
     assert abs(score1 - 1.73648) < 1e-4
 
     res2 = SearchResult(
@@ -48,13 +51,59 @@ def test_score_calculation() -> None:
         snippet="x" * 400,  # Longer snippet (capped at 300/300 = 1.0)
         source="test",
         rank=9,  # worse rank -> 1/10 = 0.1
+        independent_source_count=2,
     )
     score2 = SuperSearchAggregator._score(res2, provider_count=3)
     # provider_count=3 -> ln(4) ~= 1.386294
     # rank=9 -> 1/10 = 0.1
     # snippet length >= 300 -> 1.0
-    # Total ~= 1.386294 + 0.1 + 1.0 = 2.486294
-    assert abs(score2 - 2.48629) < 1e-4
+    # independence = 0.3 * 2 = 0.6
+    # Total ~= 1.386294 + 0.1 + 1.0 + 0.6 = 3.08629
+    assert abs(score2 - 3.08629) < 1e-4
+
+
+def test_independence_scoring_boost() -> None:
+    """Results confirmed by independent providers should score higher than identical
+    results from Big-Tech-syndicated providers only."""
+
+    # Same result, no independent sources
+    no_indep = SearchResult(
+        title="Same Title",
+        url="https://example.com/page",
+        snippet="A decent snippet with enough detail",
+        source="test",
+        rank=0,
+        independent_source_count=0,
+    )
+    # Same result, 1 independent source
+    one_indep = SearchResult(
+        title="Same Title",
+        url="https://example.com/page",
+        snippet="A decent snippet with enough detail",
+        source="test",
+        rank=0,
+        independent_source_count=1,
+    )
+    # Same result, 3 independent sources
+    many_indep = SearchResult(
+        title="Same Title",
+        url="https://example.com/page",
+        snippet="A decent snippet with enough detail",
+        source="test",
+        rank=0,
+        independent_source_count=3,
+    )
+
+    score_none = SuperSearchAggregator._score(no_indep, provider_count=1)
+    score_one = SuperSearchAggregator._score(one_indep, provider_count=1)
+    score_many = SuperSearchAggregator._score(many_indep, provider_count=3)
+
+    # Independence boost should monotonically increase scores
+    assert score_one > score_none, "1 independent source should score higher than 0"
+    assert score_many > score_one, "3 independent sources should score higher than 1"
+
+    # Verify the exact boost delta per independent source is 0.3
+    assert abs((score_one - score_none) - 0.3) < 1e-9
 
 
 def test_merge_logic(tmp_path: pathlib.Path) -> None:
@@ -151,6 +200,28 @@ class MockProvider(SearchProvider):
         ]
 
 
+class MockIndependentProvider(SearchProvider):
+    """Mock provider marked as independent for testing."""
+    name = "mock_independent"
+
+    @property
+    def independent(self) -> bool:
+        return True
+
+    async def search(self, query: str, max_results: int) -> list[SearchResult]:
+        return [
+            SearchResult(
+                title=f"Independent Result {i}",
+                url=f"https://independent.com/{i}",
+                snippet="Independent snippet with good content",
+                source=self.name,
+                rank=i,
+                providers=frozenset({self.name}),
+            )
+            for i in range(max_results)
+        ]
+
+
 @pytest.mark.asyncio
 async def test_aggregator_timeout_guard(tmp_path: pathlib.Path) -> None:
     # Test that a slow provider is aborted, but others complete
@@ -179,3 +250,43 @@ async def test_aggregator_timeout_guard(tmp_path: pathlib.Path) -> None:
     assert all(r.source == "mock_provider" for r in results)
     assert fast_provider.calls == 1
     assert slow_provider.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_independent_only_filter(tmp_path: pathlib.Path) -> None:
+    """Test that --independent-only filters out results from non-independent providers."""
+    dependent_provider = MockProvider(delay=0.0)
+    independent_provider = MockIndependentProvider()
+
+    agg = SuperSearchAggregator(
+        Config(
+            brave_api_key=None,
+            google_api_key=None,
+            google_cx=None,
+            bing_api_key=None,
+            searx_instances=[],
+            semantic_scholar_api_key=None,
+            timeout=5.0,
+        ),
+        cache=_tmp_cache(tmp_path),
+    )
+    agg._providers = [dependent_provider, independent_provider]
+    # Rebuild the independence map for injected providers
+    agg._independence_map = {p.name: p.independent for p in agg._providers}
+
+    # Without filter: both providers contribute results
+    all_results = await agg.search("test query", max_results=20, per_provider=3)
+    sources = {r.source for r in all_results}
+    assert "mock_provider" in sources
+    assert "mock_independent" in sources
+
+    # With filter: only independent provider results survive
+    indep_results = await agg.search(
+        "test independent",
+        max_results=20,
+        per_provider=3,
+        independent_only=True,
+    )
+    assert len(indep_results) > 0
+    assert all(r.independent_source_count > 0 for r in indep_results)
+    assert all(r.source == "mock_independent" for r in indep_results)

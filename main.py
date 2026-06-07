@@ -34,6 +34,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Show enabled backends and exit",
     )
+    p.add_argument(
+        "-i",
+        "--independent-only",
+        action="store_true",
+        help="Only show results found by independent-index providers (no Big Tech syndication)",
+    )
     return p.parse_args()
 
 
@@ -58,8 +64,17 @@ async def run() -> int:
     agg = SuperSearchAggregator(Config.from_env())
 
     if args.list_providers:
-        print("Active providers:", ", ".join(agg.active_providers))
-        print("Add API keys in .env for: brave, google_cse, bing")
+        independent = set(agg.independent_providers)
+        console = Console()
+        console.print("[bold]Active providers:[/bold]")
+        for name in agg.active_providers:
+            marker = " [green]★ independent[/green]" if name in independent else ""
+            console.print(f"  • {name}{marker}")
+        console.print(
+            f"\n[dim]Independent: {len(independent)} | "
+            f"Big Tech syndicated: {len(agg.active_providers) - len(independent)}[/dim]"
+        )
+        console.print("[dim]Add API keys in .env for: brave, google_cse, bing, mojeek[/dim]")
         return 0
 
     query = " ".join(args.query).strip()
@@ -70,6 +85,7 @@ async def run() -> int:
         query,
         max_results=args.max,
         per_provider=args.per_provider,
+        independent_only=args.independent_only,
     )
 
     if args.json:
@@ -80,6 +96,7 @@ async def run() -> int:
                 "snippet": r.snippet,
                 "source": r.source,
                 "providers": sorted(r.providers),
+                "independent_source_count": r.independent_source_count,
             }
             for r in results
         ]
@@ -88,8 +105,20 @@ async def run() -> int:
 
     console = Console()
     console.print(f"[bold]Query:[/bold] {query}")
-    console.print(f"[dim]Providers:[/dim] {', '.join(agg.active_providers)}")
-    console.print(f"[dim]Unique URLs:[/dim] {len(results)}\n")
+    independent = set(agg.independent_providers)
+    active = agg.active_providers
+    provider_labels = []
+    for name in active:
+        if name in independent:
+            provider_labels.append(f"[green]{name}★[/green]")
+        else:
+            provider_labels.append(f"[dim]{name}[/dim]")
+    console.print(f"Providers: {', '.join(provider_labels)}")
+    console.print(f"[dim]Unique URLs:[/dim] {len(results)}")
+    if args.independent_only:
+        console.print("[yellow]Filter:[/yellow] independent sources only\n")
+    else:
+        console.print()
     if not results:
         console.print("[yellow]No results. Try -v or check network / SearX instances.[/yellow]")
         return 1

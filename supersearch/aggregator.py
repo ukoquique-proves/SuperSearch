@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 _MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 1.0  # seconds; doubles each attempt
 
+# Additive score bonus per independent source that surfaced a result.
+# Enough to act as a tiebreaker when quality is otherwise equal, but
+# not so large that it drowns rank or snippet quality.
+_INDEPENDENCE_BOOST = 0.3
+
 
 class SuperSearchAggregator:
     """Query many backends in parallel, merge by URL, boost cross-provider hits."""
@@ -30,10 +35,19 @@ class SuperSearchAggregator:
         self._config = config or Config.from_env()
         self._providers = [p for p in build_providers(self._config) if p.enabled]
         self._cache = cache if cache is not None else SearchCache()
+        # Build a fast lookup: provider_name -> is_independent
+        self._independence_map: dict[str, bool] = {
+            p.name: p.independent for p in self._providers
+        }
 
     @property
     def active_providers(self) -> list[str]:
         return [p.name for p in self._providers]
+
+    @property
+    def independent_providers(self) -> list[str]:
+        """Return names of providers that maintain their own index (not Big Tech syndication)."""
+        return [p.name for p in self._providers if p.independent]
 
     async def search(
         self,
@@ -41,6 +55,7 @@ class SuperSearchAggregator:
         *,
         max_results: int = 25,
         per_provider: int = 15,
+        independent_only: bool = False,
     ) -> list[SearchResult]:
         if not query.strip():
             return []
@@ -48,7 +63,10 @@ class SuperSearchAggregator:
         cached = self._cache.get(query, per_provider)
         if cached is not None:
             logger.info("Cache hit for query: %s", query)
-            return cached[:max_results]
+            results = cached
+            if independent_only:
+                results = [r for r in results if r.independent_source_count > 0]
+            return results[:max_results]
 
         async def _timed_safe_search(
             provider: SearchProvider, q: str, max_res: int
@@ -70,6 +88,10 @@ class SuperSearchAggregator:
         ]
         batches = await asyncio.gather(*tasks)
         merged = self._merge(batches)
+
+        if independent_only:
+            merged = [r for r in merged if r.independent_source_count > 0]
+
         results = merged[:max_results]
         if results:
             self._cache.set(query, per_provider, results)
@@ -124,12 +146,24 @@ class SuperSearchAggregator:
                 key = normalize_url(row.url)
                 if not key or not row.url:
                     continue
+
+                # Count how many independent providers surfaced this result
+                indep_count = sum(
+                    1 for p in row.providers if self._independence_map.get(p, False)
+                )
+
                 existing = by_url.get(key)
                 if existing is None:
-                    by_url[key] = row
-                    best_rank[key] = self._score(row, provider_count=1)
+                    by_url[key] = replace(row, independent_source_count=indep_count)
+                    best_rank[key] = self._score(
+                        by_url[key], provider_count=1
+                    )
                 else:
                     combined_providers = existing.providers | row.providers
+                    combined_indep = sum(
+                        1 for p in combined_providers
+                        if self._independence_map.get(p, False)
+                    )
                     snippet = (
                         existing.snippet
                         if len(existing.snippet) >= len(row.snippet)
@@ -146,6 +180,7 @@ class SuperSearchAggregator:
                         snippet=snippet,
                         rank=min(existing.rank, row.rank),
                         providers=combined_providers,
+                        independent_source_count=combined_indep,
                     )
                     by_url[key] = merged
                     best_rank[key] = self._score(
@@ -164,4 +199,6 @@ class SuperSearchAggregator:
         rank_bonus = 1.0 / (1 + row.rank)
         diversity = math.log1p(provider_count)
         snippet_bonus = min(len(row.snippet), 300) / 300.0
-        return diversity + rank_bonus + snippet_bonus
+        # Independence boost: results confirmed by independent-index providers score higher
+        independence = _INDEPENDENCE_BOOST * row.independent_source_count
+        return diversity + rank_bonus + snippet_bonus + independence

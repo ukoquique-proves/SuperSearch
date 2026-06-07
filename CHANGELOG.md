@@ -2,6 +2,25 @@
 
 All notable changes to SuperSearch are documented here.
 
+## [Unreleased] — 2026-06-07
+
+### Added
+
+- **Independence-aware scoring** ([aggregator.py](file:///root/my-applications/BUSQUEDAS_TREMENDAS/SuperSearch/supersearch/aggregator.py)): Results confirmed by independent-index providers now receive a 0.3× scoring bonus per independent source, making them surface higher when quality is otherwise equal with Big Tech-syndicated results.
+- **Provider independence classification** ([base.py](file:///root/my-applications/BUSQUEDAS_TREMENDAS/SuperSearch/supersearch/providers/base.py)): Each provider now declares whether it maintains an independent index (`independent` property). Classified as independent: Mojeek, Brave, SearXNG, Wikipedia, Hacker News, Semantic Scholar, Internet Archive. Classified as Big Tech-syndicated: DuckDuckGo (Bing), Google CSE, Bing, Reddit.
+- **`--independent-only` / `-i` CLI flag** ([main.py](file:///root/my-applications/BUSQUEDAS_TREMENDAS/SuperSearch/main.py)): Filters results to only those found by at least one independent-index provider, fully excluding Big Tech-only results.
+- **Independence markers in CLI output**: `--list-providers` now shows ★ markers next to independent providers. Search output header color-codes providers green (independent) vs dim (syndicated).
+- **`independent_source_count` field** ([models.py](file:///root/my-applications/BUSQUEDAS_TREMENDAS/SuperSearch/supersearch/models.py)): Tracks how many independent providers surfaced each result. Exposed in JSON output.
+- **`independent_providers` property** ([aggregator.py](file:///root/my-applications/BUSQUEDAS_TREMENDAS/SuperSearch/supersearch/aggregator.py)): Returns names of active providers that maintain their own index.
+- **Independence scoring test** ([test_aggregator.py](file:///root/my-applications/BUSQUEDAS_TREMENDAS/SuperSearch/tests/test_aggregator.py)): Verifies that independent sources produce monotonically higher scores (0.3 delta per source).
+- **Independent-only filter test** ([test_aggregator.py](file:///root/my-applications/BUSQUEDAS_TREMENDAS/SuperSearch/tests/test_aggregator.py)): End-to-end test with mock independent/dependent providers.
+
+### Changed
+
+- **Scoring algorithm** ([aggregator.py](file:///root/my-applications/BUSQUEDAS_TREMENDAS/SuperSearch/supersearch/aggregator.py)): Formula extended from `diversity + rank_bonus + snippet_bonus` to include `+ 0.3 × independent_source_count`. Existing behavior preserved for results with no independent sources.
+
+---
+
 ## [Unreleased] — 2026-05-21
 
 ### Added

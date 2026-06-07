@@ -12,6 +12,7 @@ class SearchResult:
     source: str
     rank: int = 0
     providers: frozenset[str] = field(default_factory=frozenset)
+    independent_source_count: int = 0
 
 
 def normalize_url(url: str) -> str:

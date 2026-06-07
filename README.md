@@ -15,20 +15,20 @@ A multi-engine web search aggregator that maximizes coverage by querying multipl
 
 ## Supported Providers
 
-| Provider | Type | API Key Required |
-|----------|------|------------------|
-| DuckDuckGo | General search | No |
-| DuckDuckGo News | News search | No |
-| Hacker News | Tech stories (Algolia API) | No |
-| Reddit | Community discussions | No |
-| Mojeek | Independent general search | Optional (free tier) |
-| SearX | Meta-search (aggregates many engines, 17 instances + dynamic fallback) | No |
-| Wikipedia | Encyclopedia | No |
-| Semantic Scholar | Academic papers | Optional (free) |
-| Internet Archive | Web archives | No |
-| Brave Search | General search | Optional |
-| Google Custom Search | General search | Optional |
-| Bing Search | General search | Optional |
+| Provider | Type | API Key Required | Independent Index |
+|----------|------|------------------|-------------------|
+| Mojeek | General search (own crawler) | Optional (free tier) | ★ Yes |
+| Brave Search | General search (own index) | Optional | ★ Yes |
+| SearX | Meta-search (decentralized, 17+ instances) | No | ★ Yes |
+| Wikipedia | Encyclopedia (own index) | No | ★ Yes |
+| Hacker News | Tech stories (Algolia API) | No | ★ Yes |
+| Semantic Scholar | Academic papers (Allen AI) | Optional (free) | ★ Yes |
+| Internet Archive | Web archives (non-profit) | No | ★ Yes |
+| DuckDuckGo | General search (Bing syndication) | No | No |
+| DuckDuckGo News | News search (Bing syndication) | No | No |
+| Reddit | Community discussions | No | No |
+| Google Custom Search | General search | Optional | No |
+| Bing Search | General search | Optional | No |
 
 ## Installation
 
@@ -88,6 +88,8 @@ options:
   --json                Print JSON instead of table
   -v, --verbose         Log provider errors
   --list-providers      Show enabled backends and exit
+  -i, --independent-only
+                        Only show results from independent-index providers
 ```
 
 ### Examples
@@ -110,6 +112,11 @@ python main.py --json "quantum computing"
 Show active providers:
 ```bash
 python main.py --list-providers
+```
+
+Independent sources only:
+```bash
+python main.py -i "privacy focused tools"
 ```
 
 Verbose mode (for debugging):
@@ -201,10 +208,22 @@ SuperSearch/
    - Titles and snippets are merged (longer version preferred)
    - Provider list is combined
    - Rank is minimized (best position)
+   - Independent source count is tracked
 6. **Scoring**: Results are ranked by a balanced formula:
    - Provider diversity: `log(1 + provider_count)` — cross-provider results score higher but don't overwhelm single-provider results
    - Original rank: `1 / (1 + rank)` — top-ranked results score higher
    - Snippet richness: `min(len(snippet), 300) / 300` — more context scores higher
+   - **Independence boost**: `0.3 × independent_source_count` — results confirmed by independent-index providers score higher
+
+### Independence Philosophy
+
+SuperSearch classifies providers based on whether they maintain their own web index or depend on Big Tech syndication (e.g., DuckDuckGo uses Bing's index via a commercial contract). Providers with independent indexes (Mojeek, Brave, SearXNG) receive a small scoring boost because they offer:
+
+- **Diverse perspectives**: Different crawlers surface different content
+- **Resistance to centralized censorship**: No single entity controls the index
+- **Organic results**: Less influenced by commercial ranking algorithms
+
+Use `--independent-only` (`-i`) to filter results exclusively from independent sources. See [RECOMMENDED_SEARCHERS.md](RECOMMENDED_SEARCHERS.md) for the full rationale.
 
 ## Output Formats
 

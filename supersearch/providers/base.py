@@ -15,3 +15,8 @@ class SearchProvider(ABC):
     @property
     def enabled(self) -> bool:
         return True
+
+    @property
+    def independent(self) -> bool:
+        """True if provider has its own web index (not dependent on Big Tech syndication)."""
+        return False

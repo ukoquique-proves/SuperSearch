@@ -12,6 +12,10 @@ class HackerNewsProvider(SearchProvider):
 
     name = "hacker_news"
 
+    @property
+    def independent(self) -> bool:
+        return True
+
     def __init__(self, config: Config) -> None:
         self._timeout = config.timeout
 
